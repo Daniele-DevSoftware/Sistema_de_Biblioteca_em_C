@@ -1,0 +1,355 @@
+#include <ctype.h>
+#include <errno.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "biblioteca.h"
+#include "interface.h"
+
+static Biblioteca *bibliotecaDaInterface = NULL;
+
+static void encerrarPorMemoria(void) {
+    fprintf(stderr, "Erro: memoria insuficiente.\n");
+
+    if (bibliotecaDaInterface != NULL) {
+        liberarBiblioteca(bibliotecaDaInterface);
+    }
+
+    exit(EXIT_FAILURE);
+}
+
+static char *lerLinha(const char *mensagem) {
+    size_t capacidade = 32;
+    size_t tamanho = 0;
+
+    char *linha = (char*) malloc(capacidade);
+
+    int caractere;
+
+    if (linha == NULL) {
+        encerrarPorMemoria();
+    }
+
+    printf("%s", mensagem);
+
+    while ((caractere = getchar()) != '\n' && caractere != EOF) {
+
+        if (tamanho + 1 >= capacidade) {
+
+            capacidade *= 2;
+
+            char *novaLinha =
+                (char*) realloc(linha, capacidade);
+
+            if (novaLinha == NULL) {
+                free(linha);
+                encerrarPorMemoria();
+            }
+
+            linha = novaLinha;
+        }
+
+        linha[tamanho++] = (char) caractere;
+    }
+
+    linha[tamanho] = '\0';
+
+    return linha;
+}
+
+static void removerEspacosDasPontas(char *texto) {
+
+    char *inicio = texto;
+
+    while (isspace((unsigned char)*inicio)) {
+        inicio++;
+    }
+
+    memmove(texto, inicio, strlen(inicio) + 1);
+
+    char *fim = texto + strlen(texto) - 1;
+
+    while (fim >= texto &&
+           isspace((unsigned char)*fim)) {
+
+        *fim = '\0';
+        fim--;
+    }
+}
+
+static int textoVazio(const char *texto) {
+
+    while (*texto != '\0') {
+
+        if (!isspace((unsigned char)*texto)) {
+            return 0;
+        }
+
+        texto++;
+    }
+
+    return 1;
+}
+
+static char *lerTextoObrigatorio(const char *mensagem) {
+
+    char *texto;
+
+    do {
+
+        texto = lerLinha(mensagem);
+
+        removerEspacosDasPontas(texto);
+
+        if (!textoVazio(texto)) {
+            return texto;
+        }
+
+        printf("Entrada obrigatoria.\n");
+
+        free(texto);
+
+    } while (1);
+}
+
+static int lerInteiro(
+    const char *mensagem,
+    int minimo,
+    int maximo
+) {
+
+    char *linha;
+    char *fim;
+
+    long valor;
+
+    do {
+
+        linha = lerLinha(mensagem);
+
+        removerEspacosDasPontas(linha);
+
+        errno = 0;
+
+        valor = strtol(linha, &fim, 10);
+
+        while (isspace((unsigned char)*fim)) {
+            fim++;
+        }
+
+        if (!textoVazio(linha) &&
+            *fim == '\0' &&
+            errno != ERANGE &&
+            valor >= minimo &&
+            valor <= maximo) {
+
+            free(linha);
+
+            return (int) valor;
+        }
+
+        printf(
+            "Valor invalido. Digite um numero entre %d e %d.\n",
+            minimo,
+            maximo
+        );
+
+        free(linha);
+
+    } while (1);
+}
+
+static int lerSimNao(const char *mensagem) {
+
+    char *resposta;
+
+    do {
+
+        resposta = lerTextoObrigatorio(mensagem);
+
+        for (int i = 0; resposta[i] != '\0'; i++) {
+
+            resposta[i] =
+                (char) tolower((unsigned char) resposta[i]);
+        }
+
+        if (
+            strcmp(resposta, "s") == 0 ||
+            strcmp(resposta, "sim") == 0
+        ) {
+
+            free(resposta);
+            return 1;
+        }
+
+        if (
+            strcmp(resposta, "n") == 0 ||
+            strcmp(resposta, "nao") == 0
+        ) {
+
+            free(resposta);
+            return 0;
+        }
+
+        printf("Digite s/sim ou n/nao.\n");
+
+        free(resposta);
+
+    } while (1);
+}
+
+static void titulo(const char *texto) {
+
+    printf("\n====================================\n");
+    printf("%s\n", texto);
+    printf("====================================\n");
+}
+
+static void adicionarLivroMenu(Biblioteca *bib) {
+
+    int id;
+    int ano;
+    int paginas;
+    int jaLido;
+
+    char *tituloLivro;
+    char *autor;
+    char *genero;
+
+    titulo("Adicionar Livro");
+
+    id = lerInteiro("ID: ", 1, INT_MAX);
+
+    tituloLivro = lerTextoObrigatorio("Titulo: ");
+    autor = lerTextoObrigatorio("Autor: ");
+    genero = lerTextoObrigatorio("Genero: ");
+
+    ano = lerInteiro(
+        "Ano de publicacao: ",
+        1,
+        INT_MAX
+    );
+
+    paginas = lerInteiro(
+        "Quantidade de paginas: ",
+        1,
+        INT_MAX
+    );
+
+    jaLido = lerSimNao("Ja foi lido? (s/n): ");
+
+    Livro livro = criarLivro(
+        id,
+        ano,
+        paginas,
+        jaLido,
+        tituloLivro,
+        autor,
+        genero
+    );
+
+    adicionarLivro(bib, livro);
+
+    free(tituloLivro);
+    free(autor);
+    free(genero);
+
+    printf("Livro adicionado com sucesso.\n");
+}
+
+void iniciarInterface(void) {
+
+    Biblioteca *biblioteca =
+        criarBiblioteca(2);
+
+    bibliotecaDaInterface = biblioteca;
+
+    int opcao;
+
+    do {
+
+        titulo("Biblioteca Online");
+
+        printf("1 - Adicionar livro\n");
+        printf("2 - Listar livros\n");
+        printf("3 - Remover livro\n");
+        printf("4 - Marcar como lido\n");
+        printf("5 - Recomendacao\n");
+        printf("6 - Estatisticas\n");
+        printf("7 - Sair\n");
+
+        opcao = lerInteiro(
+            "Escolha: ",
+            1,
+            7
+        );
+
+        switch (opcao) {
+
+            case 1:
+                adicionarLivroMenu(biblioteca);
+                break;
+
+            case 2:
+                listarLivros(biblioteca);
+                break;
+
+            case 3: {
+
+                int id =
+                    lerInteiro(
+                        "ID do livro: ",
+                        1,
+                        INT_MAX
+                    );
+
+                if (removerLivroPorId(biblioteca, id)) {
+                    printf("Livro removido.\n");
+                } else {
+                    printf("Livro nao encontrado.\n");
+                }
+
+                break;
+            }
+
+            case 4: {
+
+                int id =
+                    lerInteiro(
+                        "ID do livro: ",
+                        1,
+                        INT_MAX
+                    );
+
+                int resultado =
+                    registrarLeitura(biblioteca, id);
+
+                if (resultado == 1) {
+                    printf("Livro marcado como lido.\n");
+                } else if (resultado == 2) {
+                    printf("Livro ja estava lido.\n");
+                } else {
+                    printf("Livro nao encontrado.\n");
+                }
+
+                break;
+            }
+
+            case 5:
+                recomendarLivro(biblioteca);
+                break;
+
+            case 6:
+                mostrarEstatisticas(biblioteca);
+                break;
+
+            case 7:
+                printf("Encerrando sistema...\n");
+                break;
+        }
+
+    } while (opcao != 7);
+
+    liberarBiblioteca(biblioteca);
+}
